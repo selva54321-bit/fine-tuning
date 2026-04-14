@@ -4,3 +4,7 @@ __pycache__/
 *$py.class
 .ipynb_checkpoints/
 full-model/
+lfm_vl_lora_final/
+majaAI/
+results/
+results2/

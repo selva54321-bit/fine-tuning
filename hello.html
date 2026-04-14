@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tanglish Dataset Generator</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
+
+  :root {
+    --bg: #0d0d0d;
+    --surface: #161616;
+    --border: #2a2a2a;
+    --accent: #ff6b35;
+    --accent2: #ffd166;
+    --text: #f0ede8;
+    --muted: #888;
+    --green: #06d6a0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    padding: 32px 20px;
+  }
+
+  h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: -1px;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    align-items: center;
+  }
+
+  button {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  #generateBtn {
+    background: var(--accent);
+    color: #000;
+  }
+
+  #generateBtn:hover:not(:disabled) { background: #ff8c5a; transform: translateY(-1px); }
+  #generateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  #downloadBtn {
+    background: var(--green);
+    color: #000;
+    display: none;
+  }
+
+  #downloadBtn:hover { background: #08f7b8; transform: translateY(-1px); }
+
+  #downloadJsonl {
+    background: var(--accent2);
+    color: #000;
+    display: none;
+  }
+  #downloadJsonl:hover { background: #ffe08a; transform: translateY(-1px); }
+
+  .progress-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    height: 8px;
+    margin-bottom: 16px;
+    overflow: hidden;
+    display: none;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+
+  .stat span { color: var(--accent2); font-weight: 700; }
+
+  .log {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    max-height: 420px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.7;
+  }
+
+  .log-entry {
+    border-bottom: 1px solid var(--border);
+    padding: 10px 0;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .log-entry:last-child { border-bottom: none; }
+
+  .log-instruction {
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 4px;
+  }
+
+  .log-instruction strong { color: var(--accent2); }
+
+  .log-response {
+    color: var(--text);
+  }
+
+  .log-idx {
+    color: var(--accent);
+    font-size: 10px;
+    margin-bottom: 2px;
+  }
+
+  .batch-header {
+    color: var(--green);
+    font-size: 11px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .error { color: #ff4444; font-size: 12px; padding: 8px 0; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>🌶️ Tanglish Dataset Generator</h1>
+<p class="subtitle">Generates 1000 Tamil-English (Tanglish) fine-tuning samples via Claude API</p>
+
+<div class="controls">
+  <button id="generateBtn" onclick="startGeneration()">▶ Generate 1000 Samples</button>
+  <button id="downloadBtn" onclick="downloadJSON()">⬇ Download JSON</button>
+  <button id="downloadJsonl" onclick="downloadJSONL()">⬇ Download JSONL</button>
+</div>
+
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-bar" id="progressBar"></div>
+</div>
+
+<div class="stats" id="stats">
+  <div>Generated: <span id="countStat">0</span> / 1000</div>
+  <div>Batches: <span id="batchStat">0</span> / 40</div>
+  <div>Status: <span id="statusStat">Idle</span></div>
+</div>
+
+<div class="log" id="log">
+  <div style="color: var(--muted); font-size: 12px;">Samples will appear here as they're generated...</div>
+</div>
+
+<script>
+let allSamples = [];
+let isRunning = false;
+
+const TOPICS = [
+  // Food & Drink
+  "Best Tamil street food", "Filter coffee vs Bru coffee", "Idli vs dosa debate", "Biryani varieties in Tamil Nadu",
+  "Late night food spots in Chennai", "Saravana Bhavan experience", "Pongal festival food", "Tamarind rice recipe",
+  // Life & Culture  
+  "Traffic in Chennai", "Auto driver bargaining", "TNEB power cut problems", "Summer heat in Tamil Nadu",
+  "Jallikattu festival", "Pongal celebration", "Thevar Jayanthi", "Cauvery water dispute",
+  "Chennai vs Coimbatore debate", "Marina Beach experience", "Saree shopping in T Nagar",
+  // Movies & Entertainment
+  "Rajinikanth movies", "Vijay vs Ajith fans", "Kollywood vs Bollywood", "Sun TV serials",
+  "Tamil memes culture", "Vijay TV shows", "Trending Tamil songs", "AR Rahman music",
+  "Kamal Haasan acting", "Tamil dubbing movies",
+  // Education & Work
+  "Engineering college life in Tamil Nadu", "Anna University stress", "IT job in Chennai",
+  "TNPSC exam preparation", "Coaching centre culture", "Parents pressure for studies",
+  "Arranged marriage in Tamil families", "Joint family problems",
+  // Relationships
+  "Tamil amma's cooking", "Thatha advice", "Chithi vs Chitti debate",
+  "Friend zone in Tamil", "Love marriage vs arranged marriage",
+  // Technology
+  "Jio vs Airtel in Tamil Nadu", "Online shopping in Tamil", "UPI payment issues",
+  "WhatsApp University forwards", "Tamil YouTube channels",
+  // Humor & Daily Life
+  "Morning bus crowd in Chennai", "Koyambedu market chaos", "Petrol price hike reaction",
+  "Government office experience", "Hospital waiting time", "Rain in Chennai problems",
+  "Neighbour aunty gossip", "Wedding function food", "Temple visit experience",
+  "Cycle pontoon parking problem", "TASMAC queue", "Ration shop experience"
+];
+
+async function callClaude(prompt) {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: `You are a generator for a Tanglish (Tamil-English mix) fine-tuning dataset. 
+Generate exactly 25 diverse question-answer pairs in Tanglish style.
+
+Rules for Tanglish style:
+- Mix Tamil words/phrases naturally into English sentences
+- Use Tamil words like: da/di, bro, machan, dei, aiyo, seri, illa, enna, nalla, romba, konjam, paaru, sollu, ungalukku, amma, appa, anna, akka, thambi, thangachi, paadam, vetti, mokka, scene, mass, vera level, semma, super, kadhal, kadavul, theivam, idhu, adhu, ithukku, adhukku, etc.
+- Include Tamil exclamations: Aiyo!, Adei!, Machan!, Dei!, Ennada!, Seri da!, Poda!, etc.
+- Sound like a genuine Tamil person talking casually
+- Use emojis naturally
+- Vary tone: funny, serious, proud, complaining, excited
+- Topics should feel authentic to Tamil Nadu life
+
+Output ONLY a JSON array of 25 objects, no other text:
+[
+  {"instruction": "question here", "response": "Tanglish answer here"},
+  ...
+]`,
+      messages: [{ role: "user", content: prompt }]
+    })
+  });
+  
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  const data = await response.json();
+  const text = data.content.map(i => i.text || "").join("");
+  const clean = text.replace(/```json\n?|```\n?/g, "").trim();
+  return JSON.parse(clean);
+}
+
+function logBatch(batchNum, samples) {
+  const log = document.getElementById('log');
+  
+  const header = document.createElement('div');
+  header.className = 'batch-header';
+  header.textContent = `── Batch ${batchNum} (${samples.length} samples) ──`;
+  log.appendChild(header);
+
+  samples.slice(0, 3).forEach((s, i) => {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `
+      <div class="log-idx">#${allSamples.length - samples.length + i + 1}</div>
+      <div class="log-instruction"><strong>Q:</strong> ${s.instruction}</div>
+      <div class="log-response"><strong style="color:var(--green)">A:</strong> ${s.response}</div>
+    `;
+    log.appendChild(entry);
+  });
+
+  if (samples.length > 3) {
+    const more = document.createElement('div');
+    more.style.cssText = 'color: var(--muted); font-size: 11px; padding: 6px 0;';
+    more.textContent = `  ... and ${samples.length - 3} more samples`;
+    log.appendChild(more);
+  }
+
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateStats(count, batch) {
+  document.getElementById('countStat').textContent = count;
+  document.getElementById('batchStat').textContent = batch;
+  const pct = (count / 1000) * 100;
+  document.getElementById('progressBar').style.width = pct + '%';
+}
+
+function buildPrompt(batchIdx) {
+  // Pick varied topics for each batch
+  const startTopic = (batchIdx * 6) % TOPICS.length;
+  const topics = [];
+  for (let i = 0; i < 6; i++) topics.push(TOPICS[(startTopic + i) % TOPICS.length]);
+  
+  return `Generate 25 Tanglish Q&A pairs covering these topics (mix them up, be creative): ${topics.join(', ')}. 
+Also include some general Tamil life topics like relationships, food, traffic, movies, work stress.
+Make each response unique and authentic. Vary the length from short punchy answers to longer detailed ones.`;
+}
+
+async function startGeneration() {
+  if (isRunning) return;
+  isRunning = true;
+  allSamples = [];
+  
+  document.getElementById('generateBtn').disabled = true;
+  document.getElementById('downloadBtn').style.display = 'none';
+  document.getElementById('downloadJsonl').style.display = 'none';
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('statusStat').textContent = 'Running...';
+
+  const BATCHES = 40; // 40 batches × 25 = 1000
+
+  try {
+    for (let b = 0; b < BATCHES; b++) {
+      document.getElementById('statusStat').textContent = `Batch ${b+1}/${BATCHES}`;
+      
+      const prompt = buildPrompt(b);
+      const samples = await callClaude(prompt);
+      
+      allSamples.push(...samples);
+      updateStats(Math.min(allSamples.length, 1000), b + 1);
+      logBatch(b + 1, samples);
+      
+      if (allSamples.length >= 1000) break;
+      
+      // Small delay to avoid rate limits
+      if (b < BATCHES - 1) await new Promise(r => setTimeout(r, 300));
+    }
+
+    document.getElementById('statusStat').textContent = '✅ Done!';
+    document.getElementById('downloadBtn').style.display = 'inline-block';
+    document.getElementById('downloadJsonl').style.display = 'inline-block';
+    
+    const done = document.createElement('div');
+    done.style.cssText = 'color: var(--green); font-size: 13px; padding: 12px 0; font-weight: 700;';
+    done.textContent = `✅ Generated ${allSamples.length} Tanglish samples! Download below.`;
+    document.getElementById('log').appendChild(done);
+    document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+
+  } catch (err) {
+    document.getElementById('statusStat').textContent = '❌ Error';
+    const errDiv = document.createElement('div');
+    errDiv.className = 'error';
+    errDiv.textContent = `Error: ${err.message}`;
+    document.getElementById('log').appendChild(errDiv);
+  }
+
+  isRunning = false;
+  document.getElementById('generateBtn').disabled = false;
+}
+
+function toTrainingFormat(samples) {
+  return samples.slice(0, 1000).map(s => ({
+    text: `### Instruction:\n${s.instruction}\n### Response:\n${s.response}`
+  }));
+}
+
+function downloadJSON() {
+  const data = toTrainingFormat(allSamples);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tanglish_dataset_1000.json';
+  a.click();
+}
+
+function downloadJSONL() {
+  const data = toTrainingFormat(allSamples);
+  const lines = data.map(d => JSON.stringify(d)).join('\n');
+  const blob = new Blob([lines], { type: 'application/x-ndjson' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tanglish_dataset_1000.jsonl';
+  a.click();
+}
+</script>
+</body>
+</html>
