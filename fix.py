@@ -22,4 +22,5 @@ with open('liquird.ipynb', 'w', encoding='utf-8') as f:
     json.dump(nb, f, indent=1)
 
 print('Successfully added commas between all dicts in the dataset list in liquird.ipynb!'
-      print("and ijdi, nch. mm")
+ 
+      print("and ijdi, nch. mm"if(nb
